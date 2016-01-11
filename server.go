@@ -47,6 +47,8 @@ func New(port string, packetHandler PacketHandler) (*UDPServer, error) {
 	return server, nil
 }
 
+// RunNew is a wrapper around new that also calls Run in a Go routine if the
+// server was created without error
 func RunNew(port string, packetHandler PacketHandler) (*UDPServer, error) {
 	s, e := New(port, packetHandler)
 	if err.Check(e) {
@@ -55,9 +57,10 @@ func RunNew(port string, packetHandler PacketHandler) (*UDPServer, error) {
 	return s, e
 }
 
-// run is the servers listen loop
+// Run is the servers listen loop. When it receives a message it will pass that
+// message into the packetHandler
 func (s *UDPServer) Run() {
-	if s.running {
+	if s.running || s.conn == nil {
 		return
 	}
 	s.running = true
@@ -76,20 +79,30 @@ func (s *UDPServer) Run() {
 	s.running = false
 }
 
+// Returns true if the server is running and can receive messages
+// Even if the server is not running, it can still send
+func (s *UDPServer) IsRunning() bool { return s.running }
+
+// Returns true if the connection is open
+// If the server is closed, it can neither send nor receive
+func (s *UDPServer) IsOpen() bool { return s.conn != nil }
+
 // Stop will stop the server
 func (s *UDPServer) Stop() error {
 	s.stop = true
 	return s.conn.SetReadDeadline(time.Now()) // kill all reads
 }
 
+// Close will close the connection, freeing the port
 func (s *UDPServer) Close() error {
 	e := s.Stop()
 	if !err.Check(e) {
 		return e
 	}
-	conn := s.conn
-	s.conn = nil
-	return conn.Close()
+	if e = s.conn.Close(); err.Check(e) {
+		s.conn = nil
+	}
+	return e
 }
 
 // Send will send a single packe (byte slice) to an address
